@@ -4,7 +4,7 @@ import logging
 import torchaudio
 from pathlib import Path
 import os
-import numpy
+import numpy as np
 from kaldiio import WriteHelper
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -17,32 +17,16 @@ import sys
 logging.basicConfig(format='%(asctime)s | %(levelname)s | %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.INFO)
 
 #==================================================================
-# set device
+# set seed
 #==================================================================
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-logging.info(f'device: {device}')
-
-#==================================================================
-# set parameters
-#==================================================================
-total_jobs = 10 # the number of parallel jobs
-job_number = 1  
-dataset_name = 'tl3_dev' # tl3_dev tl3_test tl3_train
-feature_name = 'hubert' # audio: hubert, wavlm, xlsr-53, data2vec / text: roberta, deberta-v3, gpt2, xlmr
-training_type = 'ft' # ft for fine-tuned, pt for pre-trained
-feature_layer = 24 # 1-based integer
-feature_level = 'sequence' # sequence for sequence-level, othewise frame-level
-feature_size = 'large' # additional information for a model's name
-
-encoder_name = f'{feature_name}-{training_type}-{feature_layer}-{feature_level}.{feature_size}'
-
-#==================================================================
-# global variables
-#==================================================================
-if dataset_name.startswith('swb'):
-    SAMPLE_RATE = 8000
-else:
-    SAMPLE_RATE = 16000
+import random
+def set_seed(seed=27):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 #==================================================================
 # build a segment list from stm and audmap files
@@ -95,34 +79,18 @@ def build_segment_dict(dataset_name):
     stm_ids = set(utterance_dict.keys()) & set(transcript_dict.keys())
     return list(stm_ids), utterance_dict, transcript_dict
 
-#==================================================================
-# load models
-#==================================================================
-# audio: hubert
-if feature_name == 'hubert' and training_type == 'pt' and feature_size == 'large':
-    bundle = torchaudio.pipelines.HUBERT_LARGE
-    feature_encoder = bundle.get_model()
-elif feature_name == 'hubert' and training_type == 'ft' and feature_size == 'large':
-    bundle = torchaudio.pipelines.HUBERT_ASR_LARGE
-    feature_encoder = bundle.get_model()
-# text: xlmr
-elif feature_name == 'xlmr' and training_type == 'pt' and feature_size == 'large':
-    feature_encoder = torch.hub.load('pytorch/fairseq', 'xlmr.large')
-
-feature_encoder.to(device).eval()
-logging.info(f'feature_encoder: {feature_encoder}')
 
 #=================================================================
 # convert utterance to waveform
 #==================================================================
-def convert_utterance_to_waveform(utterance):
+def convert_utterance_to_waveform(utterance, sample_rate):
     channel    = utterance['channel']
     start_time = utterance['start_time']
     end_time   = utterance['end_time']
     full_path  = utterance['full_path']
 
-    frame_offset = int(start_time * SAMPLE_RATE)
-    num_frames = int(end_time * SAMPLE_RATE) - frame_offset
+    frame_offset = int(start_time * sample_rate)
+    num_frames = int(end_time * sample_rate) - frame_offset
 
     if full_path.endswith('sph'): # switchboard
         waveform, sample_rate = torchaudio.backend.sox_io_backend.load(filepath=full_path, frame_offset=frame_offset, num_frames=num_frames, format='sph')
@@ -132,7 +100,7 @@ def convert_utterance_to_waveform(utterance):
         waveform, sample_rate = torchaudio.backend.sox_io_backend.load(filepath=full_path, frame_offset=frame_offset, num_frames=num_frames, format='wav')
     waveform = waveform[channel]
 
-    assert sample_rate == SAMPLE_RATE, 'sample_rate is different from SAMPLE_RATE'
+    assert sample_rate == sample_rate, 'sample_rate is different from sample_rate'
 
     if sample_rate != 16000:
         waveform = torchaudio.functional.resample(waveform, sample_rate, 16000)
@@ -161,23 +129,15 @@ def split_segment_for_parallel(stm_ids):
 #==================================================================
 # save waveform embeddings - ark,scp
 #==================================================================
-def save_features_ark_scp(dataset_name, encoder_name, feature_layer = int(-1), feature_level='sequence'):
-    stm_ids, utterance_dict, transcript_dict = build_segment_dict(dataset_name)
-    stm_ids.sort()
-    start_line, end_line = split_segment_for_parallel(stm_ids)
+def save_features_ark_scp(stm_ids, utterance_dict, transcript_dict, start_line, end_line, ark_file_name, scp_file_name, dataset_name, encoder_name, sample_rate, feature_encoder, feature_layer = int(-1), feature_level='sequence'):
     logging.info(f"save {encoder_name} features - ark,scp: {len(stm_ids)} segments")
-
-    output_dir = f"/share/mini1/res/t/asr/multi/multi-en/acsw/selft/features/{dataset_name}"
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
-    ark_file_name = f"{output_dir}/{encoder_name}.ark"
-    scp_file_name = f"{output_dir}/{encoder_name}.scp"
 
     with WriteHelper(f'ark,scp:{ark_file_name},{scp_file_name}') as writer:
         for key in stm_ids[start_line:end_line]:
             logging.info(f'key: {key}')
             # audio: hubert
             if encoder_name.startswith('hubert'):
-                waveform = convert_utterance_to_waveform(utterance_dict[key])
+                waveform = convert_utterance_to_waveform(utterance_dict[key], sample_rate)
                 features, _ = feature_encoder.extract_features(waveform[None, :].to(device)) # [layer][batch_size, frames, 1024]
                 features = features[feature_layer - 1]
             # text: xlmr
@@ -195,4 +155,60 @@ def save_features_ark_scp(dataset_name, encoder_name, feature_layer = int(-1), f
             # save features
             writer(key, features.cpu().detach().numpy())
 
-save_features_ark_scp(dataset_name, encoder_name, feature_layer, feature_level)
+import argparse
+
+if __name__ == "__main__":
+    print('Initiating...')
+    parser = argparse.ArgumentParser(prog='Feature extraction', description='Extract features for WER estimation')
+    parser.add_argument('--total_jobs', metavar='int', help='the number of parallel jobs', required=True)
+    parser.add_argument('--job_number', metavar='int', help='the job number', required=True)
+    parser.add_argument('--dataset_name', metavar='str', help='Dataset name', required=True)
+    parser.add_argument('--feature_name', metavar='str', help='audio: hubert, text: xlmr', required=True)
+    parser.add_argument('--training_type', metavar='str', help='ft for fine-tuned, pt for pre-trained', required=True)
+    parser.add_argument('--sample_rate', metavar='int', help='sampling rate', required=True)
+    parser.add_argument('--feature_layer', metavar='int', help='the layer number', required=True)
+    parser.add_argument('--feature_level', metavar='str', help='sequence for sequence-level, othewise frame-level', required=True)
+    parser.add_argument('--feature_size', metavar='str', help='additional information for a model size', required=True)
+
+    args = parser.parse_args()
+    total_jobs    = int(args.total_jobs)
+    job_number    = int(args.job_number)
+    dataset_name  = args.dataset_name  
+    feature_name  = args.feature_name  
+    training_type = args.training_type 
+    sample_rate   = int(args.sample_rate)
+    feature_layer = int(args.feature_layer)
+    feature_level = args.feature_level 
+    feature_size  = args.feature_size  
+    print(args)
+    encoder_name = f'{feature_name}-{training_type}-{feature_layer}-{feature_level}.{feature_size}'
+
+    set_seed()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    stm_ids, utterance_dict, transcript_dict = build_segment_dict(dataset_name)
+    stm_ids.sort()
+    start_line, end_line = split_segment_for_parallel(stm_ids)
+
+    output_dir = f"/share/mini1/res/t/asr/multi/multi-en/acsw/selft/features/{dataset_name}"
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    ark_file_name = f"{output_dir}/{encoder_name}_{job_number}_{total_jobs}.ark"
+    scp_file_name = f"{output_dir}/{encoder_name}_{job_number}_{total_jobs}.scp"
+
+    #==================================================================
+    # load models
+    #==================================================================
+    # audio: hubert
+    if feature_name == 'hubert' and training_type == 'pt' and feature_size == 'large':
+        bundle = torchaudio.pipelines.HUBERT_LARGE
+        feature_encoder = bundle.get_model()
+    elif feature_name == 'hubert' and training_type == 'ft' and feature_size == 'large':
+        bundle = torchaudio.pipelines.HUBERT_ASR_LARGE
+        feature_encoder = bundle.get_model()
+    # text: xlmr
+    elif feature_name == 'xlmr' and training_type == 'pt' and feature_size == 'large':
+        feature_encoder = torch.hub.load('pytorch/fairseq', 'xlmr.large')
+    feature_encoder.to(device).eval()
+
+    logging.info(f'feature_encoder: {feature_encoder}')
+    save_features_ark_scp(stm_ids, utterance_dict, transcript_dict, start_line, end_line, ark_file_name, scp_file_name, dataset_name, encoder_name, sample_rate, feature_encoder, feature_layer, feature_level)
