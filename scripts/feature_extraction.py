@@ -39,7 +39,7 @@ def build_segment_dict(dataset_name):
     utterance_dict = dict()
     transcript_dict = dict()
 
-    dataset_path = f'/share/mini1/res/t/asr/multi/multi-en/acsw/selft/datasets/{dataset_name}'
+    dataset_path = f'/share/mini1/res/t/asr/multi/multi-en/acsw/selft/opensource/WER-estimation/datasets/{dataset_name}'
     audmap_file_full_path = f'{dataset_path}/data.audmap'
     stm_file_full_path = f'{dataset_path}/data.stm'
 
@@ -61,10 +61,7 @@ def build_segment_dict(dataset_name):
             utterance_dict[stm_id]['channel'] = channel
             utterance_dict[stm_id]['start_time'] = start_time
             utterance_dict[stm_id]['end_time'] = end_time
-            if dataset_name.startswith('wsj'):
-                utterance_dict[stm_id]['full_path'] = f'/share/mini1/res/t/asr/multi/multi-en/acsw/selft/wavfiles/{dataset_name}/{stm_id[:12]}/{stm_id}.wav'
-            else:
-                utterance_dict[stm_id]['full_path'] = splited[-1]
+            utterance_dict[stm_id]['full_path'] = splited[-1]
 
     # read a stm file
     with open(stm_file_full_path, 'r') as stm_file:
@@ -190,10 +187,10 @@ if __name__ == "__main__":
     stm_ids.sort()
     start_line, end_line = split_segment_for_parallel(stm_ids)
 
-    output_dir = f"/share/mini1/res/t/asr/multi/multi-en/acsw/selft/features/{dataset_name}"
+    output_dir = f"/share/mini1/res/t/asr/multi/multi-en/acsw/selft/opensource/WER-estimation/features/{dataset_name}"
     Path(output_dir).mkdir(parents=True, exist_ok=True)
-    ark_file_name = f"{output_dir}/{encoder_name}_{job_number}_{total_jobs}.ark"
-    scp_file_name = f"{output_dir}/{encoder_name}_{job_number}_{total_jobs}.scp"
+    ark_file_name = f"{output_dir}/{encoder_name}_{total_jobs}_{job_number}.ark"
+    scp_file_name = f"{output_dir}/{encoder_name}_{total_jobs}_{job_number}.scp"
 
     #==================================================================
     # load models

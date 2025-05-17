@@ -65,7 +65,7 @@ for subset_type in ['train', 'dev', 'test']:
     subset_path = f'{dataset_path}/{dataset_name}_{subset_type}'
     Path(subset_path).mkdir(parents=True, exist_ok=True)
     output_stm_file_full_path = f'{subset_path}/data.stm'
-    output_audmap_file_full_path = f'{subset_path}/audmap.stm'
+    output_audmap_file_full_path = f'{subset_path}/data.audmap'
     with open(output_stm_file_full_path, 'w') as output_stm_file, \
          open(output_audmap_file_full_path, 'w') as output_audmap_file:
         for stm_file in stm_files:

@@ -2,9 +2,9 @@
 
 TOTAL_JOBS=10
 
-for FEATURE_NAME in hubert # xlmr
+for FEATURE_NAME in hubert # hubert xlmr
 do
-for DATASET_NAME in tl3_dev # tl3_test tl3_train 
+for DATASET_NAME in tl3_dev tl3_test tl3_train # tl3_dev tl3_test tl3_train 
 do
 for JOB_NUMBER in {1..10}
 do
@@ -46,8 +46,8 @@ export KALDI_ROOT=/share/mini1/sw/mini/miniframework/latest/tools/kaldi
 
 # -u for python to print stdout
 python -u \${PWD}/feature_extraction.py \
---total_jobs    10 \
---job_number    1 \
+--total_jobs    ${TOTAL_JOBS} \
+--job_number    ${JOB_NUMBER} \
 --dataset_name  ${DATASET_NAME} \
 --feature_name  ${FEATURE_NAME} \
 --training_type ft \
@@ -57,7 +57,7 @@ python -u \${PWD}/feature_extraction.py \
 --feature_size  large
 EOF
 
-GPU_TYPE=3060
+GPU_TYPE=A6000
 JID=`/share/spandh.ami1/sw/mini/jet/latest/tools/submitjob  \
      -g1 -M2 -q NORMAL \
      -o -l gputype=${GPU_TYPE} -eo \
