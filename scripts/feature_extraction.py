@@ -70,7 +70,9 @@ def build_segment_dict(dataset_name):
             splited = line.strip().split()
             stm_id = f'{splited[0]}_{get_id(splited[5])}'
             logging.debug(f'stm_id: {stm_id}')
-            transcript_dict[stm_id] = (' ').join(splited[6:])
+            transcript_dict[stm_id] = dict()
+            transcript_dict[stm_id]['stm_info']   = (' ').join(splited[:6])
+            transcript_dict[stm_id]['transcript'] = (' ').join(splited[6:])
 
     # common stm_ids
     stm_ids = set(utterance_dict.keys()) & set(transcript_dict.keys())
@@ -106,7 +108,7 @@ def convert_utterance_to_waveform(utterance, sample_rate):
 #==================================================================
 # split the list for parallel jobs
 #==================================================================
-def split_segment_for_parallel(stm_ids):
+def split_segment_for_parallel(stm_ids, total_jobs, job_number):
     total_lines = len(stm_ids)
     if total_jobs > 0:
         quotient = total_lines // total_jobs
@@ -131,26 +133,34 @@ def save_features_ark_scp(stm_ids, utterance_dict, transcript_dict, start_line, 
 
     with WriteHelper(f'ark,scp:{ark_file_name},{scp_file_name}') as writer:
         for key in stm_ids[start_line:end_line]:
-            logging.info(f'key: {key}')
-            # audio: hubert
-            if encoder_name.startswith('hubert'):
-                waveform = convert_utterance_to_waveform(utterance_dict[key], sample_rate)
-                features, _ = feature_encoder.extract_features(waveform[None, :].to(device)) # [layer][batch_size, frames, 1024]
-                features = features[feature_layer - 1]
-            # text: xlmr
-            elif encoder_name.startswith('xlmr'):
-                tokens = feature_encoder.encode(transcript_dict[key])
-                features = feature_encoder.extract_features(tokens.to(device))
-            else:
-                logging.error('ERROR: unknown encoder: {encoder_name}')
-            # aggregate raw features
-            if feature_level == 'sequence':
-                features = torch.mean(features, dim=1)  # (1, 1024)
-            else:
-                features = features[0]
-            logging.info(f'features.shape: {features.shape}')
-            # save features
-            writer(key, features.cpu().detach().numpy())
+            try: 
+                logging.info(f'key: {key}')
+                # audio: hubert
+                if encoder_name.startswith('hubert'):
+                    waveform = convert_utterance_to_waveform(utterance_dict[key], sample_rate)
+                    features, _ = feature_encoder.extract_features(waveform[None, :].to(device)) # [layer][batch_size, frames, 1024]
+                    features = features[feature_layer - 1]
+                # text: xlmr
+                elif encoder_name.startswith('xlmr'):
+                    tokens = feature_encoder.encode(transcript_dict[key]['transcript'])
+                    features = feature_encoder.extract_features(tokens.to(device))
+                else:
+                    logging.error('ERROR: unknown encoder: {encoder_name}')
+                # aggregate raw features
+                if feature_level == 'sequence':
+                    features = torch.mean(features, dim=1)  # (1, 1024)
+                else:
+                    features = features[0]
+                logging.info(f'features.shape: {features.shape}')
+                # save features
+                writer(key, features.cpu().detach().numpy())
+                # cleanup
+                del features
+                torch.cuda.empty_cache()
+
+            except RuntimeError as e:
+                logging.error(f"Runtime error for key {key}: {e}")
+                torch.cuda.empty_cache()
 
 import argparse
 
