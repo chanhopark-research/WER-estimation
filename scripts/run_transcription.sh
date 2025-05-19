@@ -4,7 +4,7 @@
 MODEL_NAME=whisper
 MODEL_SIZE=large
 
-for DATASET_NAME in tl3_dev tl3_test # tl3_dev tl3_test tl3_train 
+for DATASET_NAME in tl3_test tl3_train # tl3_dev tl3_test tl3_train 
 do
     if [ "${DATASET_NAME}" == "tl3_train" ]; then
         TOTAL_JOBS=100
@@ -59,7 +59,12 @@ python -u \${PWD}/transcription.py \
 --model_size    ${MODEL_SIZE}
 EOF
 
-GPU_TYPE=3090
+    if [ "${DATASET_NAME}" == "tl3_train" ]; then
+        GPU_TYPE=3090
+    else
+        GPU_TYPE=3060
+    fi
+
 JID=`/share/spandh.ami1/sw/mini/jet/latest/tools/submitjob  \
      -g1 -M2 -q NORMAL \
      -o -l gputype=${GPU_TYPE} -eo \

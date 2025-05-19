@@ -4,15 +4,11 @@ import argparse
 if __name__ == "__main__":
     print('Initiating...')
     parser = argparse.ArgumentParser(prog='Label generation', description='Compute Word Error Rate (WER)')
-    parser.add_argument('--total_jobs', metavar='int', help='the number of parallel jobs', required=True)
-    parser.add_argument('--job_number', metavar='int', help='the job number', required=True)
     parser.add_argument('--dataset_name', metavar='str', help='Dataset name', required=True)
     parser.add_argument('--model_name', metavar='str', help='ASR model name, e.g., whisper', required=True)
     parser.add_argument('--model_size', metavar='str', help='additional information for a model size', required=True)
 
     args = parser.parse_args()
-    total_jobs    = int(args.total_jobs)
-    job_number    = int(args.job_number)
     dataset_name  = args.dataset_name  
     model_name    = args.model_name
     model_size    = args.model_size  
@@ -32,10 +28,9 @@ if __name__ == "__main__":
 
     # common stm_ids
     stm_ids = set(utterance_dict.keys()) & set(reference_dict.keys()) & set(hypothesis_dict.keys())
-    start_line, end_line = split_segment_for_parallel(sorted(list(stm_ids)), total_jobs, job_number)
 
     label_path = f'/share/mini1/res/t/asr/multi/multi-en/acsw/selft/opensource/WER-estimation/labels/{dataset_name}'
     Path(label_path).mkdir(parents=True, exist_ok=True)
-    label_file_full_path = f'{label_path}/data.{model_name}_{model_size}.wer'
+    label_file_full_path = f'{label_path}/data.{model_name}_{model_size}_{total_jobs}_{job_number}.wer'
 
-    save_labels(stm_ids, utterance_dict, reference_dict, hypothesis_dict, start_line, end_line, label_file_full_path)
+    save_labels(stm_ids, utterance_dict, reference_dict, hypothesis_dict, label_file_full_path)

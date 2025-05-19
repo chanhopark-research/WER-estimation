@@ -3,7 +3,7 @@
 MODEL_NAME=whisper
 MODEL_SIZE=large
 
-for DATASET_NAME in tl3_dev # tl3_dev tl3_test tl3_train 
+for DATASET_NAME in tl3_dev #tl3_test tl3_train # tl3_dev tl3_test tl3_train 
 do
     if [ "${DATASET_NAME}" == "tl3_train" ]; then
         TOTAL_JOBS=100
