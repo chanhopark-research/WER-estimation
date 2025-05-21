@@ -12,7 +12,7 @@ import fairseq
 import random
 import glob
 import sys
-sys.path.append('/share/mini1/res/t/asr/multi/multi-en/acsw/selft/repositories/whisper')
+sys.path.append('/share/mini1/res/t/asr/multi/multi-en/acsw/selft/opensource/WER-estimation/repositories/whisper')
 import whisper
 from whisper.normalizers import EnglishTextNormalizer
 sys.path.append('/share/mini1/res/t/asr/multi/multi-en/acsw/selft/repositories/NeMo-text-processing')
@@ -79,7 +79,7 @@ def read_stm_file(stm_file_full_path, transcript_only=False):
             stm_id = f'{splited[0]}_{get_id(splited[5])}'
             logging.debug(f'stm_id: {stm_id}')
             if transcript_only:
-                transcript_dict[stm_id] = (' ').join(splited[6:])
+                transcript_dict[stm_id] = splited[6:]
             else:
                 transcript_dict[stm_id] = dict()
                 transcript_dict[stm_id]['stm_info']   = (' ').join(splited[:6])

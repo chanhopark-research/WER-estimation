@@ -1,5 +1,5 @@
+from utils import *
 import argparse
-from util import *
 
 if __name__ == "__main__":
     print('Initiating...')

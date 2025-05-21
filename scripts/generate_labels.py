@@ -1,4 +1,4 @@
-from util import *
+from utils import *
 import argparse
 
 if __name__ == "__main__":
@@ -31,6 +31,6 @@ if __name__ == "__main__":
 
     label_path = f'/share/mini1/res/t/asr/multi/multi-en/acsw/selft/opensource/WER-estimation/labels/{dataset_name}'
     Path(label_path).mkdir(parents=True, exist_ok=True)
-    label_file_full_path = f'{label_path}/data.{model_name}_{model_size}_{total_jobs}_{job_number}.wer'
+    label_file_full_path = f'{label_path}/data.{model_name}_{model_size}.wer'
 
     save_labels(stm_ids, utterance_dict, reference_dict, hypothesis_dict, label_file_full_path)

@@ -1,13 +1,12 @@
 #!/usr/bin/bash
 
-#TOTAL_JOBS=100 # 10 for tl3_dev and tl3_test, 100 for tl3_train
 MODEL_NAME=whisper
 MODEL_SIZE=large
 
-for DATASET_NAME in tl3_test tl3_train # tl3_dev tl3_test tl3_train 
+for DATASET_NAME in tl3_train # tl3_dev tl3_test tl3_train 
 do
     if [ "${DATASET_NAME}" == "tl3_train" ]; then
-        TOTAL_JOBS=100
+        TOTAL_JOBS=200
     else
         TOTAL_JOBS=10
     fi

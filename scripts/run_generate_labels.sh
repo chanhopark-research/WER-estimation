@@ -3,16 +3,9 @@
 MODEL_NAME=whisper
 MODEL_SIZE=large
 
-for DATASET_NAME in tl3_dev #tl3_test tl3_train # tl3_dev tl3_test tl3_train 
+for DATASET_NAME in tl3_train # tl3_dev tl3_test tl3_train 
 do
-    if [ "${DATASET_NAME}" == "tl3_train" ]; then
-        TOTAL_JOBS=100
-    else
-        TOTAL_JOBS=10
-    fi
-for ((JOB_NUMBER=1; JOB_NUMBER<=${TOTAL_JOBS}; JOB_NUMBER++))
-do
-SH_NM=generate_labels_${DATASET_NAME}_${MODEL_NAME}_${MODEL_SIZE}_${TOTAL_JOBS}_${JOB_NUMBER}
+SH_NM=generate_labels_${DATASET_NAME}_${MODEL_NAME}_${MODEL_SIZE}
 SCRPT_DIR="${PWD}/${SH_NM}"
 LOG_DIR="${SCRPT_DIR}"
 mkdir -p ${SCRPT_DIR}
@@ -50,12 +43,16 @@ export KALDI_ROOT=/share/mini1/sw/mini/miniframework/latest/tools/kaldi
 
 # -u for python to print stdout
 python -u \${PWD}/generate_labels.py \
---total_jobs    ${TOTAL_JOBS} \
---job_number    ${JOB_NUMBER} \
 --dataset_name  ${DATASET_NAME} \
 --model_name    ${MODEL_NAME} \
 --model_size    ${MODEL_SIZE}
 EOF
+
+#    if [ "${DATASET_NAME}" == "tl3_train" ]; then
+#        GPU_TYPE=3090
+#    else
+#        GPU_TYPE=3060
+#    fi
 
 GPU_TYPE=3060
 JID=`/share/spandh.ami1/sw/mini/jet/latest/tools/submitjob  \
@@ -64,5 +61,4 @@ JID=`/share/spandh.ami1/sw/mini/jet/latest/tools/submitjob  \
      ${LOG_DIR}/${SH_NM}.log \
      ${SCRPT_DIR}/${SH_NM}.sh | tail -1`
 echo "scancel ${JID}"
-done
 done
