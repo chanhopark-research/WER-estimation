@@ -1,14 +1,14 @@
 #!/usr/bin/bash
 
-TOTAL_JOBS=10
+EXPERIMENT_NAME=Fe-WER
 
-for FEATURE_NAME in hubert # hubert xlmr
+for LAYER1_SIZE in 300 600 900
 do
-for DATASET_NAME in tl3_test tl3_train # tl3_dev tl3_test tl3_train 
+for LAYER2_SIZE in 16 32 64
 do
-for JOB_NUMBER in {1..10}
+for LEARNING_RATE in 0.0001 0.0003 0.0007 0.001 0.003 0.007
 do
-SH_NM=feature_extraction_${FEATURE_NAME}_${DATASET_NAME}_${TOTAL_JOBS}_${JOB_NUMBER}
+SH_NM=training_${EXPERIMENT_NAME}_${LAYER1_SIZE}_${LAYER2_SIZE}_${LEARNING_RATE}
 SCRPT_DIR="${PWD}/${SH_NM}"
 LOG_DIR="${SCRPT_DIR}"
 mkdir -p ${SCRPT_DIR}
@@ -45,19 +45,28 @@ export NCCL_DEBUG=INFO
 export KALDI_ROOT=/share/mini1/sw/mini/miniframework/latest/tools/kaldi
 
 # -u for python to print stdout
-python -u \${PWD}/feature_extraction.py \
---total_jobs    ${TOTAL_JOBS} \
---job_number    ${JOB_NUMBER} \
---dataset_name  ${DATASET_NAME} \
---feature_name  ${FEATURE_NAME} \
---training_type pt \
---sample_rate   16000 \
---feature_layer 24 \
---feature_level sequence \
---feature_size  large
+python -u \${PWD}/training.py \
+--base_path /share/mini1/res/t/asr/multi/multi-en/acsw/selft/opensource/WER-estimation \
+--train_dataset_name tl3_train \
+--valid_dataset_name tl3_dev \
+--hypothesis_name whisper_large \
+--utterance_encoder_name hubert-pt-24-sequence.large \
+--transcript_encoder_name xlmr-pt-24-sequence.large \
+--batch_size 64 \
+--num_workers 0 \
+--max_duration 10 \
+--model_path /share/mini1/res/t/asr/multi/multi-en/acsw/selft/opensource/WER-estimation/models/${EXPERIMENT_NAME}_${LAYER1_SIZE}_${LAYER2_SIZE}_${LEARNING_RATE} \
+--layer_sizes 2048 ${LAYER1_SIZE} ${LAYER2_SIZE} 1 \
+--dropout 0.1 \
+--activation Sigmoid \
+--learning_rate ${LEARNING_RATE} \
+--max_iteration 15 \
+--max_epochs 200 \
+--early_stop 40
 EOF
 
-GPU_TYPE=A6000
+#GPU_TYPE=A6000
+GPU_TYPE=3090
 JID=`/share/spandh.ami1/sw/mini/jet/latest/tools/submitjob  \
      -g1 -M2 -q NORMAL \
      -o -l gputype=${GPU_TYPE} -eo \

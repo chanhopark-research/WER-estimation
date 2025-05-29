@@ -3,7 +3,7 @@
 MODEL_NAME=whisper
 MODEL_SIZE=large
 
-for DATASET_NAME in tl3_train # tl3_dev tl3_test tl3_train 
+for DATASET_NAME in tl3_dev tl3_test tl3_train # tl3_dev tl3_test tl3_train 
 do
 SH_NM=generate_labels_${DATASET_NAME}_${MODEL_NAME}_${MODEL_SIZE}
 SCRPT_DIR="${PWD}/${SH_NM}"

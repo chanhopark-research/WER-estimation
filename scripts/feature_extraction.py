@@ -195,7 +195,7 @@ if __name__ == "__main__":
 
     stm_ids, utterance_dict, transcript_dict = build_segment_dict(dataset_name)
     stm_ids.sort()
-    start_line, end_line = split_segment_for_parallel(stm_ids)
+    start_line, end_line = split_segment_for_parallel(stm_ids, total_jobs, job_number)
 
     output_dir = f"/share/mini1/res/t/asr/multi/multi-en/acsw/selft/opensource/WER-estimation/features/{dataset_name}"
     Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -215,6 +215,8 @@ if __name__ == "__main__":
     # text: xlmr
     elif feature_name == 'xlmr' and training_type == 'pt' and feature_size == 'large':
         feature_encoder = torch.hub.load('pytorch/fairseq', 'xlmr.large')
+    else:
+        sys.exit(f'Unknown feature name: {feature_name}')
     feature_encoder.to(device).eval()
 
     logging.info(f'feature_encoder: {feature_encoder}')

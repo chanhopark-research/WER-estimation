@@ -8,6 +8,10 @@ import numpy as np
 from kaldiio import WriteHelper
 import torch
 from torch.utils.data import Dataset, DataLoader
+import torch.multiprocessing as mp
+from torch.utils.data.distributed import DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.distributed import init_process_group, destroy_process_group
 import fairseq
 import random
 import glob
@@ -22,9 +26,10 @@ from speechbrain.utils.edit_distance import wer_details_by_utterance
 import re
 
 #==================================================================
-# set logger
+# global variables
 #==================================================================
 logging.basicConfig(format='%(asctime)s | %(levelname)s | %(message)s', datefmt='%d-%b-%y %H:%M:%S', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 #==================================================================
 # set seed
@@ -36,6 +41,23 @@ def set_seed(seed=27):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
+#==================================================================
+# set up ddp environment
+#==================================================================
+def is_main_process(rank: int):
+    return rank == 0
+
+def ddp_setup(rank, world_size, port):
+    """
+    Args:
+        rank: Unique identifier of each process
+        world_size: Total number of processes
+    """
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = str(port)
+    init_process_group(backend="nccl", rank=rank, world_size=world_size)
+    logger.info(f'rank: {rank}, world_size: {world_size}, str(port): {str(port)}')
 
 #==================================================================
 # build a segment list from stm and audmap files
@@ -97,6 +119,86 @@ def build_segment_dict(dataset_name):
     # common stm_ids
     stm_ids = set(utterance_dict.keys()) & set(transcript_dict.keys())
     return list(stm_ids), utterance_dict, transcript_dict
+
+#==================================================================
+# read features: e.g. hubert and roberta
+#==================================================================
+def read_scp_file(scp_file_name, keep_dim=False):
+    logger.debug(f'scp_file_name: {scp_file_name}')
+    start_time = time.time()
+    mat_dict = dict()
+    with ReadHelper(f'scp:{scp_file_name}') as reader:
+        for key, mat in reader:
+            if keep_dim:
+                mat_dict[key] = mat  # [frames, 1024]
+            else:
+                mat_dict[key] = mat[0]  # [1, 1024] -> [1024]
+    logger.debug(f'time on reading {len(mat_dict)} data : {time.time() - start_time:.4f}')
+    return mat_dict
+
+def read_features(dataset_name, utterance_encoder_name, transcript_encoder_name):
+    utterance_encoder_file_name = f'{features_path}/{dataset_name}/{utterance_encoder_name}.scp'
+    transcript_encoder_file_name = f'{features_path}/{dataset_name}/{transcript_encoder_name}.scp'
+    logger.info(f'utterance_encoder_file_name: {utterance_encoder_file_name}')
+    logger.info(f'transcript_encoder_file_name: {transcript_encoder_file_name}')
+    utterance_encoder_dict = read_scp_file(utterance_encoder_file_name)
+    utterance_stm_id_set = set(list(utterance_encoder_dict.keys()))
+    transcript_encoder_dict = read_scp_file(transcript_encoder_file_name)
+    transcript_stm_id_set = set(list(transcript_encoder_dict.keys()))
+    stm_ids_difference = utterance_stm_id_set ^ transcript_stm_id_set # symmetric difference = union - intersection
+    for stm_id in stm_ids_difference:
+        if stm_id in utterance_encoder_dict:
+            del(utterance_encoder_dict[stm_id])
+        if stm_id in transcript_encoder_dict:
+            del(transcript_encoder_dict[stm_id])
+    if set(utterance_encoder_dict.keys()) != set(transcript_encoder_dict.keys()):
+        sys.exit('ERROR: the number of segments are not the same')
+    return utterance_encoder_dict.keys(), utterance_encoder_dict, transcript_encoder_dict
+
+################################################################################
+# SegmentDataset
+################################################################################
+def read_feature_file(file_full_path, rank, keep_dim: bool = False):
+    from kaldiio import ReadHelper
+    feature_dict = dict()
+    import time
+    start_time = time.time()
+    with ReadHelper(f'scp:{file_full_path}') as reader:
+        #print(f'file_full_path: {file_full_path}')
+        for key, mat in reader:
+            #print(f'mat: {mat.shape}')
+            if keep_dim:
+                feature_dict[key] = mat  # [frames, 1024]
+            else:
+                feature_dict[key] = mat[0]  # [1, 1024] -> [1024]
+    if is_main_process(rank):
+        logger.debug(f'read features: {file_full_path}, time: {time.time() - start_time:.4f} seconds')
+    return feature_dict
+
+def read_label_file(file_full_path, stm_id_list, rank, verbose=True):
+    label_dict = dict()
+    with open(file_full_path) as label_file:
+        for line in label_file:
+            splited = line.strip().split(',')
+            stm_id = splited[0]
+            if stm_id not in stm_id_list:
+                if verbose:
+                    logger.debug(f'not in features: skipped {stm_id}')
+                continue
+            import numpy as np
+            tkn_er = float(np.clip(float(splited[1]) / 100, a_min=0.0, a_max=1.0))
+            sub_er = float(np.clip(float(splited[2]) / 100, a_min=0.0, a_max=1.0))
+            del_er = float(np.clip(float(splited[3]) / 100, a_min=0.0, a_max=1.0))
+            ins_er = float(np.clip(float(splited[4]) / 100, a_min=0.0, a_max=1.0))
+            if stm_id not in label_dict:
+                label_dict[stm_id] = dict()
+            label_dict[stm_id]['tkn_er'] = tkn_er
+            label_dict[stm_id]['sub_er'] = sub_er
+            label_dict[stm_id]['del_er'] = del_er
+            label_dict[stm_id]['ins_er'] = ins_er
+    if is_main_process(rank):
+        logger.debug(f'read labels: {file_full_path}')
+    return label_dict
 
 #=================================================================
 # convert utterance to waveform
@@ -265,21 +367,21 @@ def save_labels(stm_ids, utterance_dict, reference_dict, hypothesis_dict, label_
             if detail['hyp_absent'] and detail['key'] not in stm_ids:
                 continue
             stm_id = detail['key']
+            WER = float(detail['WER'])
+            substitutions = detail['substitutions']
+            deletions = detail['deletions']
+            insertions = detail['insertions']
             num_edits = detail['num_edits']
             num_ref_tokens = detail['num_ref_tokens']
-            WER = float(detail['WER'])
-            insertions = detail['insertions']
-            deletions = detail['deletions']
-            substitutions = detail['substitutions']
             duration = float(utterance_dict[stm_id])
-            print(f'{stm_id},{num_edits},{num_ref_tokens},{WER},{insertions},{deletions},{substitutions},{duration}', file=output_file)
+            print(f'{stm_id},{WER},{substitutions},{deletions},{insertions},{num_edits},{num_ref_tokens},{duration}', file=output_file)
             if duration <= float(duration_limit):
                 total_seg += 1
-                total_tok += num_ref_tokens
-                total_ins += insertions
-                total_del += deletions
-                total_sub += substitutions
-                total_dur += duration
                 total_WER += WER/100
+                total_sub += substitutions
+                total_del += deletions
+                total_ins += insertions
+                total_tok += num_ref_tokens
+                total_dur += duration
                 WER_list.append(WER/100)
     print(f'total_seg: {total_seg}, total_dur(h): {total_dur/3600:.2f}, avg_dur(s): {total_dur / total_seg:.2f}, total_tok: {total_tok}, avg_tok: {total_tok / total_seg:.4f}, avg_WER: {np.mean(WER_list):.4f}, std. dev. WER: {np.std(WER_list):.4f}, WER (weighted): {(total_ins + total_del + total_sub) / total_tok:.4f}, total_edits: {total_ins + total_del + total_sub}, total_ins: {total_ins}, total_del: {total_del}, total_sub: {total_sub}')
