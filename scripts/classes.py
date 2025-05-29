@@ -53,7 +53,7 @@ class SegmentDataset(Dataset):
 
     def __getitem__(self, index):
         stm_id = self.stm_id_list[index]
-        return stm_id, torch.tensor(self.utterance_feature_dict[stm_id]), torch.tensor(self.transcript_feature_dict[stm_id]), torch.tensor(self.label_dict[stm_id]['sub_er']), torch.tensor(self.label_dict[stm_id]['ins_er']), torch.tensor(self.label_dict[stm_id]['del_er']), torch.tensor(self.label_dict[stm_id]['tkn_er'])
+        return stm_id, torch.tensor(self.utterance_feature_dict[stm_id]), torch.tensor(self.transcript_feature_dict[stm_id]), torch.tensor(self.label_dict[stm_id]['tkn_er']), torch.tensor(self.label_dict[stm_id]['sub_er']), torch.tensor(self.label_dict[stm_id]['del_er']), torch.tensor(self.label_dict[stm_id]['ins_er'])
 
     def __len__(self):
         return len(self.stm_id_list)

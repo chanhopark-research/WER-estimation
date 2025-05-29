@@ -24,6 +24,9 @@ import nemo_text_processing
 from nemo_text_processing.text_normalization.normalize import Normalizer as NeMoNormalizer
 from speechbrain.utils.edit_distance import wer_details_by_utterance
 import re
+import time
+import scipy.stats
+from sklearn.metrics import mean_squared_error
 
 #==================================================================
 # global variables
@@ -385,3 +388,184 @@ def save_labels(stm_ids, utterance_dict, reference_dict, hypothesis_dict, label_
                 total_dur += duration
                 WER_list.append(WER/100)
     print(f'total_seg: {total_seg}, total_dur(h): {total_dur/3600:.2f}, avg_dur(s): {total_dur / total_seg:.2f}, total_tok: {total_tok}, avg_tok: {total_tok / total_seg:.4f}, avg_WER: {np.mean(WER_list):.4f}, std. dev. WER: {np.std(WER_list):.4f}, WER (weighted): {(total_ins + total_del + total_sub) / total_tok:.4f}, total_edits: {total_ins + total_del + total_sub}, total_ins: {total_ins}, total_del: {total_del}, total_sub: {total_sub}')
+
+def get_free_port():
+    import socketserver
+    with socketserver.TCPServer(('localhost',0),None) as s:
+           return s.server_address[1]
+
+def training(rank: int, world_size: int, port: int, args: dict()):
+    ddp_setup(rank, world_size, port)
+    set_seed()
+    device = torch.device(f'cuda:{rank}' if torch.cuda.is_available() else 'cpu')
+
+    base_path               = args.base_path
+    train_dataset_name      = args.train_dataset_name
+    valid_dataset_name      = args.valid_dataset_name
+    utterance_encoder_name  = args.utterance_encoder_name
+    transcript_encoder_name = args.transcript_encoder_name
+    hypothesis_name         = args.hypothesis_name
+    batch_size              = int(args.batch_size)
+    num_workers             = int(args.num_workers)
+    max_duration            = int(args.max_duration)
+    model_path              = args.model_path
+    layer_sizes             = [int(layer_size) for layer_size in list(args.layer_sizes)]
+    dropout                 = float(args.dropout)
+    activation              = args.activation
+    learning_rate           = float(args.learning_rate)
+    max_iteration           = int(args.max_iteration)
+    max_epochs              = int(args.max_epochs)
+    early_stop              = int(args.early_stop)
+
+    #==================================================================
+    # load features
+    #==================================================================
+    train_utterance_scp_file_full_path  = f'{base_path}/features/{train_dataset_name}/{utterance_encoder_name}.scp'
+    valid_utterance_scp_file_full_path  = f'{base_path}/features/{valid_dataset_name}/{utterance_encoder_name}.scp'
+    train_hypothesis_scp_file_full_path = f'{base_path}/features/{train_dataset_name}/{transcript_encoder_name}.scp'
+    valid_hypothesis_scp_file_full_path = f'{base_path}/features/{valid_dataset_name}/{transcript_encoder_name}.scp'
+    train_label_file_full_path          = f'{base_path}/labels/{train_dataset_name}/data.{hypothesis_name}.wer'
+    valid_label_file_full_path          = f'{base_path}/labels/{valid_dataset_name}/data.{hypothesis_name}.wer'
+
+    train_dataset = SegmentDataset(train_utterance_scp_file_full_path, \
+                                   train_hypothesis_scp_file_full_path, \
+                                   train_label_file_full_path, rank)
+    valid_dataset = SegmentDataset(valid_utterance_scp_file_full_path, \
+                                   valid_hypothesis_scp_file_full_path, \
+                                   valid_label_file_full_path, rank)
+
+    train_loader = DataLoader(dataset = train_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, sampler=DistributedSampler(train_dataset))
+    valid_loader = DataLoader(dataset = valid_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+
+    train_total_steps = len(train_loader)
+    valid_total_steps = len(valid_loader)
+
+    if is_main_process(rank):
+        logger.info(f'train_total_steps: {train_total_steps}')
+        logger.info(f'valid_total_steps: {valid_total_steps}')
+
+    #==================================================================
+    # load models
+    #==================================================================
+    model = MultipleHiddenLayersModel(layer_sizes, dropout)
+    model.to(rank)
+    model = DDP(model, device_ids=[rank])
+    optimizer = torch.optim.Adam(model.module.parameters(), lr=learning_rate)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_iteration, verbose=False)
+
+    os.makedirs(model_path, exist_ok=True)
+    best_model_full_path = f'{model_path}/best.pt'
+    last_model_full_path = f'{model_path}/last.pt'
+
+    start_epoch = 0
+    best_valid_loss_epoch = 0
+    not_improved_count = 0
+    if is_main_process(rank):
+        logger.info(f'rank: {rank} | A new mapping model has been generated.')
+
+    #==================================================================
+    # WER prediction
+    #==================================================================
+    loss = nn.MSELoss(reduction='mean')
+    for current_epoch in range(start_epoch, max_epochs):
+        train_loss_epoch = 0
+        valid_loss_epoch = 0
+
+        #==============================================================
+        # training
+        #==============================================================
+        start_time_epoch = time.time()
+        model.module.train()
+        for i, (stm_ids, utterance_samples, hypothesis_samples, sub_rates, ins_rates, del_rates, wers) in enumerate(train_loader):
+            start_time_step = time.time()
+            # Loss
+            logit_wer = model(utterance_samples.to(device), hypothesis_samples.to(device))
+            train_loss_step = loss(logit_wer, wers.to(device)[:,None])
+            train_loss_epoch += float(train_loss_step)
+
+            # Backward and optimize
+            optimizer.zero_grad()
+            train_loss_step.backward()
+            optimizer.step()
+
+            # step logging
+            end_time_step = time.time()
+
+        #==============================================================
+        # validation
+        #==============================================================
+        predicted_wer_list = list()
+        reference_wer_list = list()
+
+        model.module.eval()
+        with torch.no_grad():
+            for i, (stm_ids, utterance_samples, hypothesis_samples, sub_rates, ins_rates, del_rates, wers) in enumerate(valid_loader):
+                logit_wer = model(utterance_samples.to(device), hypothesis_samples.to(device))
+                predicted_wer_list += torch.squeeze(logit_wer)
+                reference_wer_list += wers
+
+                # loss
+                valid_loss_step = loss(logit_wer, wers.to(device)[:,None])
+                valid_loss_epoch += float(valid_loss_step)
+
+        predicted_wer_numpy_list = list()
+        reference_wer_numpy_list = list()
+        for t in predicted_wer_list:
+            predicted_wer_numpy_list.append(t.detach().cpu().numpy())
+        for t in reference_wer_list:
+            reference_wer_numpy_list.append(t.detach().cpu().numpy())
+        predicted_wer_numpy_list = np.array(predicted_wer_numpy_list)
+        reference_wer_numpy_list = np.array(reference_wer_numpy_list)
+
+        pearson_correlation_coefficients = scipy.stats.pearsonr(predicted_wer_numpy_list, reference_wer_numpy_list)
+        rmse = mean_squared_error(reference_wer_numpy_list, predicted_wer_numpy_list, squared=False)
+
+        #==============================================================
+        # scheduling
+        #==============================================================
+        # Backward and optimize
+        scheduler.step()
+
+        #==============================================================
+        # epoch logging
+        #==============================================================
+        train_loss_epoch = torch.sqrt(torch.tensor(train_loss_epoch) / train_total_steps)
+        valid_loss_epoch = torch.sqrt(torch.tensor(valid_loss_epoch) / valid_total_steps)
+
+        end_time_epoch = time.time()
+        if is_main_process(rank):
+            logger.info(f'rank: {rank} | epoch: {current_epoch:3}, time: {end_time_epoch - start_time_epoch:5.2f}, train_loss_epoch: {train_loss_epoch:5.4f}, valid_loss_epoch: {valid_loss_epoch:5.4f}, valid_PCC: {pearson_correlation_coefficients[0]:5.4f}, valid_RMSE: {rmse:5.4f}')
+
+        #==============================================================
+        # save mapping models
+        #==============================================================
+        save_dict = dict()
+        save_dict['epoch'] = current_epoch
+        save_dict[f'model'] = model.module.state_dict()
+        save_dict[f'optimizer'] = optimizer.state_dict()
+        save_dict[f'scheduler'] = scheduler.state_dict()
+
+        if current_epoch == 0 or best_valid_loss_epoch >= valid_loss_epoch: # if the current loss is better than the best
+            best_valid_loss_epoch = valid_loss_epoch
+            not_improved_count = 0
+            save_dict['best_loss'] = best_valid_loss_epoch
+            save_dict['not_improved_count'] = not_improved_count
+            if is_main_process(rank):
+                torch.save(save_dict, best_model_full_path)
+                logger.info(f'rank: {rank} | The model is saved at {current_epoch} epoch.')
+        else:
+            not_improved_count += 1
+            save_dict['best_loss'] = best_valid_loss_epoch
+            save_dict['not_improved_count'] = not_improved_count
+            if is_main_process(rank):
+                logger.info(f'rank: {rank} | not_improved_count/early_stop: {not_improved_count}/{early_stop}')
+        if is_main_process(rank):
+            torch.save(save_dict, last_model_full_path)
+
+        if not_improved_count >= early_stop:
+            if is_main_process(rank):
+                logger.info(f'rank: {rank} | Early stop at {current_epoch} epoch after {not_improved_count} epochs.')
+            break
+
+    torch.distributed.barrier()
+    torch.distributed.destroy_process_group()

@@ -94,7 +94,7 @@ def training(rank: int, world_size: int, port: int, args: dict()):
         #==============================================================
         start_time_epoch = time.time()
         model.module.train()
-        for i, (stm_ids, utterance_samples, hypothesis_samples, sub_rates, ins_rates, del_rates, wers) in enumerate(train_loader):
+        for i, (stm_ids, utterance_samples, hypothesis_samples, wers, sub_rates, del_rates, ins_rates) in enumerate(train_loader):
             start_time_step = time.time()
             # Loss
             logit_wer = model(utterance_samples.to(device), hypothesis_samples.to(device))
@@ -117,7 +117,7 @@ def training(rank: int, world_size: int, port: int, args: dict()):
 
         model.module.eval()
         with torch.no_grad():
-            for i, (stm_ids, utterance_samples, hypothesis_samples, sub_rates, ins_rates, del_rates, wers) in enumerate(valid_loader):
+            for i, (stm_ids, utterance_samples, hypothesis_samples, wers, sub_rates, del_rates, ins_rates) in enumerate(valid_loader):
                 logit_wer = model(utterance_samples.to(device), hypothesis_samples.to(device))
                 predicted_wer_list += torch.squeeze(logit_wer)
                 reference_wer_list += wers

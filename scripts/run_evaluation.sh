@@ -2,13 +2,13 @@
 
 EXPERIMENT_NAME=Fe-WER
 
-for LAYER1_SIZE in 300 600 900
+for LAYER1_SIZE in 600
 do
-for LAYER2_SIZE in 16 32 64
+for LAYER2_SIZE in 32
 do
-for LEARNING_RATE in 0.0001 0.0003 0.0007 0.001 0.003 0.007
+for LEARNING_RATE in 0.0007
 do
-SH_NM=training_${EXPERIMENT_NAME}_${LAYER1_SIZE}_${LAYER2_SIZE}_${LEARNING_RATE}
+SH_NM=evaluation_${EXPERIMENT_NAME}_${LAYER1_SIZE}_${LAYER2_SIZE}_${LEARNING_RATE}
 SCRPT_DIR="${PWD}/${SH_NM}"
 LOG_DIR="${SCRPT_DIR}"
 mkdir -p ${SCRPT_DIR}
@@ -45,10 +45,9 @@ export NCCL_DEBUG=INFO
 export KALDI_ROOT=/share/mini1/sw/mini/miniframework/latest/tools/kaldi
 
 # -u for python to print stdout
-python -u \${PWD}/training.py \
+python -u \${PWD}/evaluation.py \
 --base_path /share/mini1/res/t/asr/multi/multi-en/acsw/selft/opensource/WER-estimation \
---train_dataset_name tl3_train \
---valid_dataset_name tl3_dev \
+--test_dataset_name tl3_test \
 --hypothesis_name whisper_large \
 --utterance_encoder_name hubert-pt-24-sequence.large \
 --transcript_encoder_name xlmr-pt-24-sequence.large \
@@ -57,11 +56,7 @@ python -u \${PWD}/training.py \
 --max_duration 10 \
 --model_path /share/mini1/res/t/asr/multi/multi-en/acsw/selft/opensource/WER-estimation/models/${EXPERIMENT_NAME}_${LAYER1_SIZE}_${LAYER2_SIZE}_${LEARNING_RATE} \
 --layer_sizes 2048 ${LAYER1_SIZE} ${LAYER2_SIZE} 1 \
---dropout 0.1 \
---learning_rate ${LEARNING_RATE} \
---max_iteration 15 \
---max_epochs 200 \
---early_stop 40
+--exp_path ${SCRPT_DIR}
 EOF
 
 #GPU_TYPE=A6000
@@ -72,6 +67,7 @@ JID=`/share/spandh.ami1/sw/mini/jet/latest/tools/submitjob  \
      ${LOG_DIR}/${SH_NM}.log \
      ${SCRPT_DIR}/${SH_NM}.sh | tail -1`
 echo "scancel ${JID}"
+
 done
 done
 done
