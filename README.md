@@ -1,12 +1,12 @@
-# WER-estimation
-Minimum implementation of Error Rate estimation models from [Park et al. (2025)](https://arxiv.org/abs/2310.08225)
+# WER-Estimation
+Minimum implementation of Word Error Rate estimation models from [Park et al. (2025)](https://arxiv.org/abs/2310.08225)
 
 # Task List
 - [x] Download TEDLIUM3 using torchaudio
 - [x] Feature extraction (HuBERT, XLM-R)
-- [x] Transcribe speech using Automatic Speech Recognitioni (ASR) models (Whisper/HuBERT)
+- [x] Transcribe speech using Automatic Speech Recognition (ASR) models (Whisper/HuBERT)
 - [x] Generate labels for Character Error Rate (CER) and Word Error Rate (WER)
-- [x] Train a CER/WER estimation model
+- [x] Train a WER estimation model
 - [x] Evaluate the model
 
 # Envirnonment
@@ -23,7 +23,7 @@ Minimum implementation of Error Rate estimation models from [Park et al. (2025)]
 - torchaudio
 - whisper
 ## Set a directory for the project
-export PROJECT_DIR=*path_to_this_repository*
+- export PROJECT_DIR=*path_to_this_repository*
 
 # Download a dataset: TED-LIUM corpus release 3
 - download_tedlium3.py
