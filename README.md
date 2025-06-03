@@ -1,4 +1,4 @@
-# Fast Word Error Rate Estimation (Fe-WER, Fast WER-Estimation)
+# Fast Word Error Rate Estimation (Fe-WER)
 Minimum implementation of Word Error Rate estimation models from [Park et al. (2025)](https://arxiv.org/abs/2310.08225)
 
 # Task List
