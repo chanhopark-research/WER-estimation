@@ -1,3 +1,4 @@
+from classes import *
 import argparse
 import yaml
 import logging
@@ -74,15 +75,15 @@ def read_audmap_file(audmap_file_full_path, duration_only=False):
     with open(audmap_file_full_path, 'r') as audmap_file:
         logging.info(f'audmap_file_full_path: {audmap_file_full_path}')
         for line in audmap_file:
-            splited = line.strip().split()
-            logging.debug(f'splited: {splited}')
-            stm_id = splited[0]
-            channel = int(splited[1]) - 1
-            start_time = float(splited[2])
-            end_time = float(splited[3])
+            parts = line.strip().split()
+            logging.debug(f'parts: {parts}')
+            stm_id = parts[0]
+            channel = int(parts[1]) - 1
+            start_time = float(parts[2])
+            end_time = float(parts[3])
             # remove utterances shorter than 0s
             if end_time < start_time:
-                logging.info(f'{splited[0]} is shorter than 0')
+                logging.info(f'{parts[0]} is shorter than 0')
                 continue
             if duration_only:
                 utterance_dict[stm_id] = float(end_time - start_time)
@@ -91,7 +92,7 @@ def read_audmap_file(audmap_file_full_path, duration_only=False):
                 utterance_dict[stm_id]['channel'] = channel
                 utterance_dict[stm_id]['start_time'] = start_time
                 utterance_dict[stm_id]['end_time'] = end_time
-                utterance_dict[stm_id]['full_path'] = splited[-1]
+                utterance_dict[stm_id]['full_path'] = parts[-1]
     return utterance_dict
 
 def read_stm_file(stm_file_full_path, transcript_only=False):
@@ -100,15 +101,15 @@ def read_stm_file(stm_file_full_path, transcript_only=False):
     with open(stm_file_full_path, 'r') as stm_file:
         logging.info(f'stm_file_full_path: {stm_file_full_path}')
         for line in stm_file:
-            splited = line.strip().split()
-            stm_id = f'{splited[0]}_{get_id(splited[5])}'
+            parts = line.strip().split()
+            stm_id = f'{parts[0]}_{get_id(parts[5])}'
             logging.debug(f'stm_id: {stm_id}')
             if transcript_only:
-                transcript_dict[stm_id] = splited[6:]
+                transcript_dict[stm_id] = parts[6:]
             else:
                 transcript_dict[stm_id] = dict()
-                transcript_dict[stm_id]['stm_info']   = (' ').join(splited[:6])
-                transcript_dict[stm_id]['transcript'] = (' ').join(splited[6:])
+                transcript_dict[stm_id]['stm_info']   = (' ').join(parts[:6])
+                transcript_dict[stm_id]['transcript'] = (' ').join(parts[6:])
     return transcript_dict
 
 def build_segment_dict(dataset_name):
@@ -158,9 +159,6 @@ def read_features(dataset_name, utterance_encoder_name, transcript_encoder_name)
         sys.exit('ERROR: the number of segments are not the same')
     return utterance_encoder_dict.keys(), utterance_encoder_dict, transcript_encoder_dict
 
-################################################################################
-# SegmentDataset
-################################################################################
 def read_feature_file(file_full_path, rank, keep_dim: bool = False):
     from kaldiio import ReadHelper
     feature_dict = dict()
@@ -178,27 +176,35 @@ def read_feature_file(file_full_path, rank, keep_dim: bool = False):
         logger.debug(f'read features: {file_full_path}, time: {time.time() - start_time:.4f} seconds')
     return feature_dict
 
-def read_label_file(file_full_path, stm_id_list, rank, verbose=True):
+def read_label_file(file_full_path, stm_id_list, max_duration, rank, verbose=True):
     label_dict = dict()
     with open(file_full_path) as label_file:
         for line in label_file:
-            splited = line.strip().split(',')
-            stm_id = splited[0]
+            parts = line.strip().split(',')
+            stm_id = parts[0]
             if stm_id not in stm_id_list:
                 if verbose:
                     logger.debug(f'not in features: skipped {stm_id}')
                 continue
             import numpy as np
-            tkn_er = float(np.clip(float(splited[1]) / 100, a_min=0.0, a_max=1.0))
-            sub_er = float(np.clip(float(splited[2]) / 100, a_min=0.0, a_max=1.0))
-            del_er = float(np.clip(float(splited[3]) / 100, a_min=0.0, a_max=1.0))
-            ins_er = float(np.clip(float(splited[4]) / 100, a_min=0.0, a_max=1.0))
+            tkn_er = float(np.clip(float(parts[1]) / 100, a_min=0.0, a_max=1.0))
+            num_sub = int(parts[2])
+            num_del = int(parts[3])
+            num_ins = int(parts[4])
+            num_edi = int(parts[5])
+            num_ref = int(parts[6])
+            duration = float(parts[7])
+            if duration > max_duration:
+                continue
             if stm_id not in label_dict:
                 label_dict[stm_id] = dict()
             label_dict[stm_id]['tkn_er'] = tkn_er
-            label_dict[stm_id]['sub_er'] = sub_er
-            label_dict[stm_id]['del_er'] = del_er
-            label_dict[stm_id]['ins_er'] = ins_er
+            label_dict[stm_id]['num_sub'] = num_sub
+            label_dict[stm_id]['num_del'] = num_del
+            label_dict[stm_id]['num_ins'] = num_ins
+            label_dict[stm_id]['num_edi'] = num_edi
+            label_dict[stm_id]['num_ref'] = num_ref
+            label_dict[stm_id]['duration'] = duration
     if is_main_process(rank):
         logger.debug(f'read labels: {file_full_path}')
     return label_dict
@@ -411,7 +417,6 @@ def training(rank: int, world_size: int, port: int, args: dict()):
     model_path              = args.model_path
     layer_sizes             = [int(layer_size) for layer_size in list(args.layer_sizes)]
     dropout                 = float(args.dropout)
-    activation              = args.activation
     learning_rate           = float(args.learning_rate)
     max_iteration           = int(args.max_iteration)
     max_epochs              = int(args.max_epochs)
@@ -429,10 +434,10 @@ def training(rank: int, world_size: int, port: int, args: dict()):
 
     train_dataset = SegmentDataset(train_utterance_scp_file_full_path, \
                                    train_hypothesis_scp_file_full_path, \
-                                   train_label_file_full_path, rank)
+                                   train_label_file_full_path, max_duration, rank)
     valid_dataset = SegmentDataset(valid_utterance_scp_file_full_path, \
                                    valid_hypothesis_scp_file_full_path, \
-                                   valid_label_file_full_path, rank)
+                                   valid_label_file_full_path, max_duration, rank)
 
     train_loader = DataLoader(dataset = train_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, sampler=DistributedSampler(train_dataset))
     valid_loader = DataLoader(dataset = valid_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
@@ -596,7 +601,7 @@ def evaluation(rank: int, world_size: int, port: int, args: dict()):
 
     test_dataset = SegmentDataset(test_utterance_scp_file_full_path, \
                                    test_hypothesis_scp_file_full_path, \
-                                   test_label_file_full_path, rank)
+                                   test_label_file_full_path, max_duration, rank)
 
     test_loader = DataLoader(dataset = test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, sampler=DistributedSampler(test_dataset))
 

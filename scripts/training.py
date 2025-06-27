@@ -18,7 +18,6 @@ if __name__ == "__main__":
     parser.add_argument('--model_path', metavar='str', help='a path to save a model', required=True)
     parser.add_argument('--layer_sizes', metavar='int', nargs='+', help='a layer number for MultiLayer Perceptrons', required=True)
     parser.add_argument('--dropout', metavar='float', help='dropout for training', required=True)
-    parser.add_argument('--activation', metavar='str', help='a activation function name', required=True)
     parser.add_argument('--learning_rate', metavar='float', help='a learning rate for training', required=True)
     parser.add_argument('--max_iteration', metavar='int', help='the maximum iteration for scheduler', required=True)
     parser.add_argument('--max_epochs', metavar='int', help='the maximum epoch for training', required=True)
@@ -28,7 +27,8 @@ if __name__ == "__main__":
     print(args)
 
     set_seed()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cpu")
 
     world_size = torch.cuda.device_count()
     port = get_free_port()

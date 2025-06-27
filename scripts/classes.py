@@ -32,7 +32,7 @@ class MultipleHiddenLayersModel(nn.Module):
 
 from torch.utils.data import Dataset
 class SegmentDataset(Dataset):
-    def __init__(self, utterance_scp_file_full_path, transcript_scp_file_full_path, label_file_full_path, rank):
+    def __init__(self, utterance_scp_file_full_path, transcript_scp_file_full_path, label_file_full_path, max_duration, rank):
         self.utterance_scp_file_full_path = utterance_scp_file_full_path
         self.transcript_scp_file_full_path = transcript_scp_file_full_path
         self.label_file_full_path = label_file_full_path
@@ -44,7 +44,7 @@ class SegmentDataset(Dataset):
         utterance_stm_id_set = set(list(self.utterance_feature_dict.keys()))
         transcript_stm_id_set = set(list(self.transcript_feature_dict.keys()))
         stm_ids_common = utterance_stm_id_set & transcript_stm_id_set
-        self.label_dict = read_label_file(self.label_file_full_path, stm_ids_common, self.rank)
+        self.label_dict = read_label_file(self.label_file_full_path, stm_ids_common, max_duration, rank)
 
         self.zero_wer_count = self._get_zero_wer_count()
         self.stm_id_list = self._remove_zero_wer()

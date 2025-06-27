@@ -47,32 +47,32 @@ def build_segment_dict(dataset_name):
     with open(audmap_file_full_path, 'r') as audmap_file:
         logging.info(f'audmap_file_full_path: {audmap_file_full_path}')
         for line in audmap_file:
-            splited = line.strip().split()
-            logging.debug(f'splited: {splited}')
-            stm_id = splited[0]
-            channel = int(splited[1]) - 1
-            start_time = float(splited[2])
-            end_time = float(splited[3])
+            parts = line.strip().split()
+            logging.debug(f'parts: {parts}')
+            stm_id = parts[0]
+            channel = int(parts[1]) - 1
+            start_time = float(parts[2])
+            end_time = float(parts[3])
             # remove utterances shorter than 0s
             if end_time < start_time:
-                logging.info(f'{splited[0]} is shorter than 0')
+                logging.info(f'{parts[0]} is shorter than 0')
                 continue
             utterance_dict[stm_id] = dict()
             utterance_dict[stm_id]['channel'] = channel
             utterance_dict[stm_id]['start_time'] = start_time
             utterance_dict[stm_id]['end_time'] = end_time
-            utterance_dict[stm_id]['full_path'] = splited[-1]
+            utterance_dict[stm_id]['full_path'] = parts[-1]
 
     # read a stm file
     with open(stm_file_full_path, 'r') as stm_file:
         logging.info(f'stm_file_full_path: {stm_file_full_path}')
         for line in stm_file:
-            splited = line.strip().split()
-            stm_id = f'{splited[0]}_{get_id(splited[5])}'
+            parts = line.strip().split()
+            stm_id = f'{parts[0]}_{get_id(parts[5])}'
             logging.debug(f'stm_id: {stm_id}')
             transcript_dict[stm_id] = dict()
-            transcript_dict[stm_id]['stm_info']   = (' ').join(splited[:6])
-            transcript_dict[stm_id]['transcript'] = (' ').join(splited[6:])
+            transcript_dict[stm_id]['stm_info']   = (' ').join(parts[:6])
+            transcript_dict[stm_id]['transcript'] = (' ').join(parts[6:])
 
     # common stm_ids
     stm_ids = set(utterance_dict.keys()) & set(transcript_dict.keys())
