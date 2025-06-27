@@ -194,7 +194,7 @@ def read_label_file(file_full_path, stm_id_list, max_duration, rank, verbose=Tru
             num_edi = int(parts[5])
             num_ref = int(parts[6])
             duration = float(parts[7])
-            if duration > max_duration:
+            if duration <= max_duration:
                 continue
             if stm_id not in label_dict:
                 label_dict[stm_id] = dict()
