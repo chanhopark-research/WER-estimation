@@ -4,8 +4,8 @@ Minimum implementation of Word Error Rate estimation models from [Park et al. (2
 # Task List
 - [x] Download TEDLIUM3 using torchaudio
 - [x] Feature extraction (HuBERT, XLM-R)
-- [x] Transcribe speech using Automatic Speech Recognition (ASR) models (Whisper/HuBERT)
-- [x] Generate labels for Character Error Rate (CER) and Word Error Rate (WER)
+- [x] Transcribe speech using Automatic Speech Recognition (ASR) models (HuBERT)
+- [x] Generate labels for Word Error Rate (WER)
 - [x] Train a WER estimation model
 - [x] Evaluate the model
 
