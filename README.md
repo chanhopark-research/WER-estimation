@@ -143,7 +143,7 @@ python -u training.py \
 --transcript_encoder_name xlmr-pt-24-sequence.large \
 --batch_size 64 \
 --num_workers 0 \
---max_duration 10 \
+--max_duration 9999 \
 --model_path ${PROJECT_DIR}/models/${EXPERIMENT_NAME}_${LAYER1_SIZE}_${LAYER2_SIZE}_${LEARNING_RATE} \
 --layer_sizes 2048 ${LAYER1_SIZE} ${LAYER2_SIZE} 1 \
 --dropout 0.1 \
@@ -158,16 +158,16 @@ python -u training.py \
 - example
 ```
 python -u evaluation.py \
---base_path ${PROJECT_DIR}
---test_dataset_name tl3_test
---hypothesis_name whisper_large
---utterance_encoder_name hubert-pt-24-sequence.large
---transcript_encoder_name xlmr-pt-24-sequence.large
---batch_size 64
---num_workers 0
---max_duration 10
---model_path ${PROJECT_DIR}/models/Fe-WER_600_32_0.0007
---layer_sizes 2048 600 32 1
+--base_path ${PROJECT_DIR} \
+--test_dataset_name tl3_test \
+--hypothesis_name whisper_large \
+--utterance_encoder_name hubert-pt-24-sequence.large \
+--transcript_encoder_name xlmr-pt-24-sequence.large \
+--batch_size 64 \
+--num_workers 0 \
+--max_duration 9999 \
+--model_path ${PROJECT_DIR}/models/Fe-WER_600_32_0.0007 \
+--layer_sizes 2048 600 32 1 \
 --exp_path ${PROJECT_DIR}/scripts/evaluation_Fe-WER_600_32_0.0007
 ```
 
